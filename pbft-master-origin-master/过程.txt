@@ -1,0 +1,714 @@
+
+我现在有这样一个关于系统的想法，需要你帮我设计一下系统方案框架，可以选用的技术等等。我最重要写代码，能帮到我的东西都可以。下面是系统的内容描述：
+
+系统的目标是实现一个分布式节点的表决功能。总体的IO为，输入一个用户行为，输出一个判断结果。例如输入1+1，经过表决后系统输出结果2。
+我有四个进程，他们分别以不同的逻辑运算1+1并给出自己的计算结果，例如2或者其他错误答案，我需要对这些结果进行统计，通过少数服从多数的方式决定最终结果。例如收到（2，2，2，1）则最终结果为2，如果（1，1，1，2）则最终输出1. 
+这里涉及到一个少数服从多数的逻辑，所以需要一个节点来完成任务，为了去中心化，我们采取类似于PBFT中视图的方式决定本轮由谁来完成裁决操作。
+即按照一定算法逻辑为每次事件，选举一个主节点。此次事件由主节点收集并分析，输出一个最终结果。
+此外，我还需要实现重组和清洗，也就是说这四个节点中可能会存在一个是恶意的，他不会输出合理的判断结果。例如正常来讲1+1=2，但是恶意节点会输出3，从而希望达到扰乱判决的目的。我们的系统可以实现对这些恶意节点的清洗，即发现他，然后用冗余节点替换他。例如目前网络中的节点为1、2、3、4，当发现4为恶意节点，或发现4出现不一致情况时，我们使用冗余的节点5、6、7、8等去做替换，也就是更新P2P网络，将4剔除并更换新节点。这些冗余节点可以通过列表等的方式.
+
+系统目标
+系统的目标是实现一个分布式节点的表决功能。总体的 I/O 为，输入一个用户行为，输出一个判断结果。例如输入 1+1，经过表决后系统输出结果 2。
+
+节点架构
+系统由多个节点组成，其中一个节点被选举为主节点（Leader）。所有节点通过 P2P 网络连接，可以相互通信和交换数据。当发现恶意节点时，可以使用冗余节点替换它，更新 P2P 网络。
+
+流程步骤
+输入一个用户行为，即需要进行表决的数据。
+所有节点进行逻辑运算，得到自己的计算结果，并将结果发送给主节点。
+主节点收集所有结果，并根据少数服从多数的原则决定最终结果，并将结果广播给所有节点。
+所有节点接收到最终结果，并输出。
+可能出现的问题
+可能会存在恶意节点，它会输出错误的结果。当发现恶意节点时，需要使用冗余节点替换它，更新 P2P 网络。
+
+可能用到的算法和技术
+视图切换算法：用于选举主节点，并在主节点宕机时进行视图切换。
+冗余节点列表：用于替换恶意节点，更新 P2P 网络。
+分布式协议：用于保证多个节点之间的一致性和可靠性，例如 PBFT 等。
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class MainNode {
+
+    public static void main(String[] args) {
+        String[] resultFiles = {"result1.txt", "result2.txt", "result3.txt", "result4.txt"};
+
+        int[] resultCounts = new int[10]; // 用于统计结果值的出现次数，假设结果值为0到9
+
+        // 读取四个节点的结果文件并进行统计
+        for (String file : resultFiles) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    int result = Integer.parseInt(line);
+                    resultCounts[result]++;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // 找到出现次数最多的结果值
+        int maxCount = 0;
+        int maxResult = -1;
+        for (int i = 0; i < resultCounts.length; i++) {
+            if (resultCounts[i] > maxCount) {
+                maxCount = resultCounts[i];
+                maxResult = i;
+            }
+        }
+
+        System.out.println("最终结果为：" + maxResult);
+    }
+}
+
+
+描述一下我的想法。我的系统是一个P2P网络，我要实现的是节点之间通信。例如当前有8个节点，但是我只需要其中4个交流，其他节点作为备份。
+我有一个存储序号的列表，例如当前是1，2，3，4四个节点接入，那么列表中存储的就是他们几个的序号，当我要发送消息的时候，就会进行广播，查询socket列表中1，2，3，4对应的socket并发送消息。某一时刻节点4宕机，那么我就会从备份节点中去一个替换进来，替换存储编号的列表为例如1，2，3，5，之后的步骤一样。可以理解吗，合理吗，梳理一下
+基于 ArrayList 也可以实现节点的替换功能。您可以通过以下步骤来实现替换函数：
+
+定义一个 ArrayList<NodeInfo>，用于存储节点信息。
+实现一个函数，接受替换节点的逻辑序号和新节点信息作为参数。
+在替换函数中，首先根据逻辑序号查找要替换的节点在 ArrayList 中的索引位置。
+如果找到了要替换的节点，将新节点信息放入替换位置。
+如果未找到要替换的节点，直接将新节点信息添加到 ArrayList 中。
+替换完成后，ArrayList 中的节点信息就会更新。
+
+我有两个存储节点编号的arraylist,一个是活跃节点列表AllNodeCommonMsg.activeNodeList，另一个是备份列表AllNodeCommonMsg.backupNodeList
+当一个节点index掉线，且属于活跃节点列表时，用备份列表中的一个替换掉线节点（从备份节点中删掉一个，并加入活跃节点列表），
+如果属于备份节点列表，删掉。否则warn一下、
+ 
+
+我有一个存储如下内容的文件
+{"port":18080,"ip":"127.0.0.1","index":0,"publicKey":"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm9gAitZ+KQuRwti9stLJ+ctGIFhVDgPHWE4R94GZh27K+GsWZccpiMeR8XV+Xvp7ki7/l+wu0YhT84P/Ku5E/M8RHHJU5UlVBZZHbu8j7lp42lENYsX8zhHvMV5Wcspv9FoTCaR1Y4SXpCjQIqK+16Lf/oH6eybFjhpTeetr4+QIDAQAB"}
+{"port":18081,"ip":"127.0.0.1","index":1,"publicKey":"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCg98I5BRP806SbnrJH6NvwTKgYpXeyX+GUQ+nqvbDNDfpmisaKXROFnmnXNXpWG8VEJP0VG4kdZFpsPaU6Gbc8GnDUhLQ8iftrH5XiPM1MF4pDtpPx3uhedqx3+7HMRy/CSwBUBjGRrzNQ0/5PkynO3IlelBKeXKpaO0oMIs/lCwIDAQAB"}
+
+private boolean initAddress() {
+	FileReader fileReader = new FileReader(PbftUtil.ipJsonPath);
+	List<String> ipJsonStr = fileReader.readLines();
+	for (String s : ipJsonStr) {
+		ReplayJson replayJson = JSON.parseObject(s, ReplayJson.class);
+		NodeAddress nodeAddress = new NodeAddress();
+		nodeAddress.setIp(replayJson.getIp());
+		nodeAddress.setPort(replayJson.getPort());
+		NodeBasicInfo nodeBasicInfo = new NodeBasicInfo();
+		nodeBasicInfo.setAddress(nodeAddress);
+		nodeBasicInfo.setIndex(replayJson.getIndex());
+		AllNodeCommonMsg.allNodeAddressMap.put(replayJson.getIndex(), nodeBasicInfo);
+		AllNodeCommonMsg.publicKeyMap.put(replayJson.getIndex(), replayJson.getPublicKey());
+	}
+	// 将自己节点信息写入文件
+	if (AllNodeCommonMsg.allNodeAddressMap.values().size() < 3 && !AllNodeCommonMsg.allNodeAddressMap.containsKey(node.getIndex())) {
+		PbftUtil.writeIpToFile(node);
+	}
+	if (AllNodeCommonMsg.allNodeAddressMap.containsKey(node.getIndex())) {
+		log.warn("已经存在此节点");
+		return false;
+	}
+	log.info(String.format("ip.json文件数量%s", ipJsonStr.size()));
+	log.info(String.format("内存地址%s", AllNodeCommonMsg.allNodeAddressMap.values().size()));
+	return AllNodeCommonMsg.allNodeAddressMap.values().size() == ipJsonStr.size();
+}
+这是与他相关的代码，可以理解吗
+
+ private boolean initAddress() {
+    FileReader fileReader = new FileReader(PbftUtil.ipJsonPath);
+    List<String> ipJsonStr = fileReader.readLines();
+    int initialSize = AllNodeCommonMsg.allNodeAddressMap.size(); // 记录初始节点数量
+
+    for (String s : ipJsonStr) {
+        ReplayJson replayJson = JSON.parseObject(s, ReplayJson.class);
+        int nodeIndex = replayJson.getIndex();
+
+        if (AllNodeCommonMsg.allNodeAddressMap.containsKey(nodeIndex)) {
+            log.info("节点已存在，进行替换: {}", nodeIndex);
+            NodeAddress nodeAddress = new NodeAddress();
+            nodeAddress.setIp(replayJson.getIp());
+            nodeAddress.setPort(replayJson.getPort());
+
+            NodeBasicInfo nodeBasicInfo = new NodeBasicInfo();
+            nodeBasicInfo.setAddress(nodeAddress);
+            nodeBasicInfo.setIndex(nodeIndex);
+
+            AllNodeCommonMsg.allNodeAddressMap.put(nodeIndex, nodeBasicInfo);
+            AllNodeCommonMsg.publicKeyMap.put(nodeIndex, replayJson.getPublicKey());
+        } else {
+            NodeAddress nodeAddress = new NodeAddress();
+            nodeAddress.setIp(replayJson.getIp());
+            nodeAddress.setPort(replayJson.getPort());
+
+            NodeBasicInfo nodeBasicInfo = new NodeBasicInfo();
+            nodeBasicInfo.setAddress(nodeAddress);
+            nodeBasicInfo.setIndex(nodeIndex);
+
+            AllNodeCommonMsg.allNodeAddressMap.put(nodeIndex, nodeBasicInfo);
+            AllNodeCommonMsg.publicKeyMap.put(nodeIndex, replayJson.getPublicKey());
+        }
+    }
+
+    int finalSize = AllNodeCommonMsg.allNodeAddressMap.size(); // 记录最终节点数量
+    int addedNodes = finalSize - initialSize; // 计算新增节点数量
+    log.info("新增节点数量: {}", addedNodes);
+    log.info("ip.json文件数量: {}", ipJsonStr.size());
+    log.info("内存地址: {}", finalSize);
+
+    // 更新文件内容
+    updateIpJsonFile();
+
+    return finalSize == ipJsonStr.size();
+}
+
+private void updateIpJsonFile() {
+    FileWriter fileWriter = new FileWriter(PbftUtil.ipJsonPath);
+
+    for (NodeBasicInfo nodeInfo : AllNodeCommonMsg.allNodeAddressMap.values()) {
+        NodeAddress address = nodeInfo.getAddress();
+        String publicKey = AllNodeCommonMsg.publicKeyMap.get(nodeInfo.getIndex());
+
+        ReplayJson replayJson = new ReplayJson();
+        replayJson.setIp(address.getIp());
+        replayJson.setPort(address.getPort());
+        replayJson.setIndex(nodeInfo.getIndex());
+        replayJson.setPublicKey(publicKey);
+
+        String jsonStr = JSON.toJSONString(replayJson);
+        fileWriter.writeLine(jsonStr);
+    }
+
+    fileWriter.close();
+}
+[com.bsl.p2p.server.P2PServerAioHandler]-[INFO] 服务端接收到来自node[4]的PREPARE消息
+
+[com.bsl.p2p.server.P2PServerAioHandler]-[INFO] 服务端接收到来自node[6]的GET_VIEW消息
+[com.bsl.p2p.server.ServerAction]-[INFO] server结点回复视图请求操作
+[com.bsl.p2p.server.ServerAction]-[INFO] 同意此节点PbftMsg(msgType=-1, node=0, toNode=6, time=1684223822222, passOrNot=false, body=null, isOk=false, viewNum=0, id=1ace0d3a-a0a5-437d-8989-ffcc1684da81, sign=null)的申请
+
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18080), index=0)
+[com.bsl.p2p.client.P2PClientLinstener]-[INFO] 结点server:127.0.0.1:18080, client:0:0:0:0:0:0:0:0:56717连接服务端成功
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18081), index=1)
+[com.bsl.p2p.client.P2PClientLinstener]-[WARN] 结点6连接服务端127.0.0.1:18081失败
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18082), index=2)
+[com.bsl.p2p.client.P2PClientLinstener]-[WARN] 结点6连接服务端127.0.0.1:18082失败
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18083), index=3)
+[com.bsl.p2p.client.P2PClientLinstener]-[INFO] 结点server:127.0.0.1:18083, client:0:0:0:0:0:0:0:0:56723连接服务端成功
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18084), index=4)
+[com.bsl.p2p.client.P2PClientLinstener]-[INFO] 结点server:127.0.0.1:18084, client:0:0:0:0:0:0:0:0:56724连接服务端成功
+[com.bsl.config.StartConfig]-[INFO] client链接服务端的数量5
+[com.bsl.config.StartConfig]-[INFO] 节点列表更新完毕，活动节点列表[0, 1, 2, 3]，备份节点列表[4, 6]
+[com.bsl.util.Pbft]-[INFO] 结点开始进行view同步操作
+[com.bsl.util.ClientUtil]-[INFO] 开始向node[0]发送GET_VIEW消息
+[com.bsl.util.ClientUtil]-[INFO] 开始向node[1]发送GET_VIEW消息
+[com.bsl.util.ClientUtil]-[INFO] 开始向node[2]发送GET_VIEW消息
+[com.bsl.util.ClientUtil]-[INFO] 开始向node[3]发送GET_VIEW消息
+[com.bsl.util.ClientUtil]-[ERROR] 该节点非主节点，不能发送preprepare消息
+
+
+[com.bsl.config.StartConfig]-[INFO] 节点6尝试链接NodeBasicInfo(address=NodeAddress(ip=127.0.0.1, port=18080), index=0)
+[com.bsl.p2p.client.P2PClientLinstener]-[INFO] 结点server:127.0.0.1:18080, client:0:0:0:0:0:0:0:0:57086连接服务端成功
+[com.bsl.config.StartConfig]-[INFO] client链接服务端的数量1
+[com.bsl.config.StartConfig]-[INFO] 节点列表更新完毕，活动节点列表[0, 6, null, null]，备份节点列表[]
+[com.bsl.util.Pbft]-[WARN] 区块链中的节点小于等于3
+[com.bsl.util.ClientUtil]-[INFO] 开始向node[0]发送CLIENT_REPLAY消息
+[com.bsl.util.ClientUtil]-[INFO] 广播ip消息：CLIENT_REPLAY
+[com.bsl.util.ClientUtil]-[ERROR] 该节点非主节点，不能发送preprepare消息
+
+[com.bsl.config.StartConfig]-[INFO] client链接服务端的数量0
+[com.bsl.config.StartConfig]-[INFO] 节点列表更新完毕，活动节点列表[0, null, null, null]，备份节点列表[]
+[com.bsl.util.Pbft]-[WARN] 区块链中的节点小于等于3
+[com.bsl.util.ClientUtil]-[INFO] 广播ip消息：CLIENT_REPLAY
+[com.bsl.p2p.server.P2PServerAioHandler]-[INFO] 服务端接收到来自node[6]的CLIENT_REPLAY消息
+[com.bsl.p2p.client.P2PClientLinstener]-[INFO] 结点server:127.0.0.1:18086, client:0:0:0:0:0:0:0:0:57087连接服务端成功
+[com.bsl.p2p.server.ServerAction]-[INFO] 节点6添加ip地址：127.0.0.1:18086
+[com.bsl.p2p.server.ServerAction]-[INFO] 有新节点加入网络，当前活动节点列表：[0, 6, null, null]，备份节点列表：[]
+
+
+鉴权输出情况：
+事件000763 表决结果[1,1,1,1]-> 放行
+事件000764 表决结果[1,1,1,1]-> 放行
+事件000765 表决结果[1,1,1,1]-> 放行
+事件000766 表决结果[0,0,0,0]-> 拒止
+
+map  id  list《id，Boolean》
+
+
+如需要申请转部门，请同学通过邮件申请，发送至campus@alibaba-inc.com
+
+● 邮件标题：姓名+转部门/转岗位申请
+
+● 内容包含：
+
+（1）申请编号
+
+（2）姓名
+
+（3）手机号
+
+（4）申请转入的部门+岗位
+
+（5）目前所在部门+岗位
+
+（6）申请转部门的原因
+
+（7）我已知晓并同意：1. 转岗位需要消耗掉一个意向机会；2. 转部门/岗位均只有一次申请机会
+
+注意：1. 转岗位需要消耗掉一个意向机会（同部门改岗位无法操作）；2. 转部门/岗位均只有一次申请机会，请慎重考虑
+
+ 这是数据结构
+ public static Map<String, List<VoteBasicMsg>> allNodeState = new HashMap<>();
+ VoteBasicMsg {
+    /**
+     * 节点的实际编号
+     */
+    private int nodeId;
+    /**
+     * 这个代表了节点的决定
+     */
+    private boolean vote;
+}
+ 通过 
+ msg.setAllNodeState(AllNodeCommonMsg.allNodeState);
+ //广播自己的结果
+ ClientUtil.prePrepare(msg);
+ 发送，接收方收到msg后，需要和本地的结果结合以后再发出去。
+ 
+我解释一下目的。现在需要做投票系统，系统中有四个节点。
+节点0把自己的结果发送出去，例如是true，是编号为id的事件。
+其他节点收到msg后回去查询自己本地AllNodeCommonMsg.allNodeState里面存储的id事件对应的结果，放入msg并且同步本地的。例如<"id",<(0,true), (1,true)>>，广播这个消息，这样所有四个节点在一段时间后都能够获得<"id",<(0,true), (1,true), (2,true), (3,true)>>这样的数据。
+我怎么写接收端的逻辑
+
+// 假设接收到的消息为 msg
+
+// 1. 查询本地的 AllNodeCommonMsg.allNodeState，找到与 msg 中事件ID对应的结果列表
+String eventId = msg.getEventId();
+List<VoteBasicMsg> localResultList = AllNodeCommonMsg.allNodeState.getOrDefault(eventId, new ArrayList<>());
+
+// 2. 将本地的结果与接收到的结果合并
+List<VoteBasicMsg> receivedResultList = msg.getAllNodeState().get(eventId);
+if (receivedResultList != null) {
+    for (VoteBasicMsg receivedResult : receivedResultList) {
+        boolean found = false;
+        for (VoteBasicMsg localResult : localResultList) {
+            if (localResult.getNodeId() == receivedResult.getNodeId()) {
+                // 更新本地结果的 vote
+                localResult.setVote(receivedResult.isVote());
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // 将接收到的结果添加到本地结果列表中
+            localResultList.add(receivedResult);
+        }
+    }
+}
+
+// 3. 更新本地的 AllNodeCommonMsg.allNodeState
+AllNodeCommonMsg.allNodeState.put(eventId, localResultList);
+
+// 4. 广播合并后的结果
+ClientUtil.prePrepare(msg);
+
+[<0,true>,<1,true>,<3,true>,<4,true>]这种类型的列表，怎么判断其中有没有某一编号的元素。<4,true>是一个封装起来的VoteBasicMsg
+
+实现一个替换更新的函数，我本来存储的localResultList 是[<1,true>,<0,true>]
+收到很多receivedResultList数据比如[<0,true>,<2,true>]、[<0,true>,<3,true>]、[<0,true>,<2,true>]、[<0,true>,<3,true>]
+我最终我本来存储的localResultList要更新为[<1,true>,<0,true>,<2,true>,<3,true>]，替换更新，如果有<2,true>了就换掉这种
+
+
+我有四个节点，这四个节点相互建立网络连接，他们会分别启动一个线程去检测各自的一个独特文件是否修改。
+如果节点0发现自己的文件修改过，则会向其他节点发送消息请求分享结果。也就是获取其他节点各自文件的修改内容。
+但是现在会发生一件事情就是当我节点0发现文件修改，其他节点接收到请求时，我节点1或2、3还没有检测到，导致只能返回一个空null，从而影响结果。
+这个问题怎么解决
+
+给你一个List<VoteBasicMsg> list，[<0,true>,<1,true>,<3,true>,<4,false>]这种内容，其中<0,true>是VoteBasicMsg的<nodeId,vote> 对象
+找到其中不一样的那个，并返回他的nodeId
+
+
+环境是ubuntu18.04，java1.8
+在我的的java程序，能不能实现启动一个新的终端，让他去执行某一条指令，例如”python3 es_detector.py -U“，并且获取这条指令对应的进程号
+
+
+我有两个list，activeNodeList和backupNodeList。我有很多个节点0，1，2，3，4，5，他们互相组成一个P2P网络。节点编号分别存储在这两个list中。
+例如activeNodeList中[0,1,2,3]和backupNodeList[4,5].
+节点分别对应一个主main进程，可以通过各自的Node.getIndex()获得自己的编号（0，1等等）.
+main函数执行的流程是先加入p2p网络，再开启文件监控线程。
+我会有一个机制对activeNodeList和backupNodeList更新，是基于P2P网络的。
+我现在想做的是再这之后main函数判断当前节点是否处于activeNodeList，如果处于则向下执行，否则等待。
+这部分等待怎么写合适
+
+
+我的文件中会存储
+{"port":18080,"ip":"127.0.0.1","index":0,"publicKey":"MAQAB"}
+{"port":18081,"ip":"127.0.0.1","index":1,"publicKey":"DAQAB"}
+这些行，我想在进程关闭之前把自己对应的那行删掉怎么写，通过node.getIndex()可以获得index编号，例如我是1.我希望我的进程关闭之后，文件中的内容变为
+{"port":18080,"ip":"127.0.0.1","index":0,"publicKey":"MAQAB"}
+
+
+
+
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+
+ 
+
+存储的是ReplayJson类型的json，用fastjson解析，代码怎么写。java8
+public static void deleteLineFromReplayJsonFile(String filePath, int currentNodeIndex) {
+        try {
+            // 读取文件内容
+            String fileContent = Files.readString(Path.of(filePath));
+
+            // 解析JSON数据
+            JSONArray jsonArray = JSON.parseArray(fileContent);
+
+            // 构建新的JSON数组，删除匹配当前节点索引的对象
+            JSONArray newJsonArray = new JSONArray();
+            for (Object obj : jsonArray) {
+                ReplayJson replayJson = JSON.toJavaObject((JSONObject) obj, ReplayJson.class);
+                int index = replayJson.getIndex();
+
+                // 检查index字段是否与当前节点索引匹配
+                if (index != currentNodeIndex) {
+                    newJsonArray.add(replayJson);
+                }
+            }
+
+            // 将新的JSON数组转换为字符串
+            String newFileContent = newJsonArray.toJSONString();
+
+            // 将新的内容写回文件
+            Files.write(Path.of(filePath), newFileContent.getBytes(), StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+	
+	
+我有四个节点，这四个节点相互建立网络连接，他们会分别启动一个线程去检测各自的一个独特文件是否修改。
+检测到之后，他们会分别存储一个list[<1,true>]、[<2,true>]、[<3,true>]、[<4,true>]，并进行广播，但是只有节点1有权限广播出去。
+其他节点收到节点1的广播之后，会对自己的list进行更新。例如变成[<1,true>，<2,true>]、[<1,true>，<3,true>]、[<1,true>，<4,true>].
+有个问题，这里我的list是存在map中的《String， list》，string是为了收到广播后可以去更新对应的list。
+但是这个string 怎么设计，如果用uuid，节点1生成的和节点234的都不一样，那么就无法从map中读出来。怎么处理实现这种同步呢
+这里map的key是为了标识事件编号，也就是最终同步效果为{<“事件1”：[<1,true>，<2,true>]>，<“事件2”：[<1,true>，<2,true>]>，<“事件3”：[<1,true>，<2,true>]>}
+
+问题在于收到广播的节点怎么知道我之前的记录应该是这个事件的，
+他们会分别初始化一个<“事件a”：[<2,true>]>， 之后收到主节点广播的<“事件b”：[<1,true>]>,能够把它俩合并，怎么办呢
+ 
+ 
+java 存储一个string对应的boolean 应该用什么数据结构，只有一个数据
+
+环境是java8，json解析工具是fastjson。将json解析成表格打印  数据结构为 List<VoteBasicMsg>，存储的内容是 <int nodeId; boolean vote;>
+例如[{"nodeId":0,"vote":true},{"nodeId":1,"vote":true},{"nodeId":2,"vote":true},{"nodeId":4,"vote":true}]
+我希望打印出来一个表格，2行5列。
+第一列第一行是节点编号，第二行是表决结果
+其余列分别是节点编号以及对应的vote结果，但是需要对vote转化一下，如果是true就打印放行；如果是false就打印拒止
+最好是带网格线的格式，要做好对齐。只需要打印部分的逻辑就可以，不用管数据结构
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Main {
+    public static void main(String[] args) {
+        String json = "[{\"nodeId\":0,\"vote\":true},{\"nodeId\":1,\"vote\":true},{\"nodeId\":2,\"vote\":true},{\"nodeId\":4,\"vote\":true}]";
+        List<VoteBasicMsg> voteList = JSON.parseArray(json, VoteBasicMsg.class);
+
+        int numRows = 2;
+        int numCols = voteList.size() + 1;
+
+        List<String[]> tableData = new ArrayList<>();
+        String[] headerRow = new String[numCols];
+        String[] voteRow = new String[numCols];
+
+        headerRow[0] = "| 节点编号 ";
+        voteRow[0] = "| 表决结果 ";
+
+        for (int i = 0; i < voteList.size(); i++) {
+            VoteBasicMsg vote = voteList.get(i);
+            headerRow[i + 1] = String.format("| %-7d ", vote.getNodeId());
+            voteRow[i + 1] = vote.isVote() ? "| 放行 " : "| 拒止 ";
+        }
+
+        tableData.add(headerRow);
+        tableData.add(voteRow);
+
+        printTable(tableData);
+    }
+
+    public static void printTable(List<String[]> tableData) {
+        int numRows = tableData.size();
+        int numCols = tableData.get(0).length;
+
+        int[] colWidths = new int[numCols];
+
+        // Calculate column widths
+        for (String[] row : tableData) {
+            for (int j = 0; j < numCols; j++) {
+                int cellWidth = row[j].length();
+                if (cellWidth > colWidths[j]) {
+                    colWidths[j] = cellWidth;
+                }
+            }
+        }
+
+        // Print table
+        printHorizontalLine(colWidths);
+        for (String[] row : tableData) {
+            printTableRow(row, colWidths);
+            printHorizontalLine(colWidths);
+        }
+    }
+
+    public static void printTableRow(String[] row, int[] colWidths) {
+        System.out.print(row[0]);
+        for (int i = 1; i < row.length; i++) {
+            String cell = row[i];
+            System.out.print(padRight(cell, colWidths[i]));
+        }
+        System.out.println("|");
+    }
+
+    public static void printHorizontalLine(int[] colWidths) {
+        for (int width : colWidths) {
+            System.out.print("+" + repeatChar('-', width));
+        }
+        System.out.println("+");
+    }
+
+    public static String padRight(String s, int n) {
+        return String.format("%-" + n + "s", s);
+    }
+
+    public static String repeatChar(char c, int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    
+}
+ 
+我有四个节点，分别会启动线程对文件更新做监测。
+如果文件内容更新，我会用以下逻辑存储
+AllNodeCommonMsg.myChoice.put(eventData.getEventId(),msg.isPassOrNot());
+VoteBasicMsg v = new VoteBasicMsg(msg.getNode(),msg.isPassOrNot());
+                    List<VoteBasicMsg> nodeStateList = new ArrayList<>();
+                    nodeStateList.add(v);
+AllNodeCommonMsg.allNodeState.put(msg.getId(), nodeStateList);
+
+主节点（四个节点之一）用有资格向大家广播他检测到的更新内容。收到的节点会发出响应，
+
+接收到来自节点[0]的PRE_PREPARE类型消息
+阶段二：PREPARE
+3节点，要广播的是[{"nodeId":3,"vote":true},{"nodeId":0,"vote":false}]
+
+但是存在一个问题，我之前存储的{"nodeId":3,"vote":true}，会被下一次的事件利用。
+例如他们监控的是文件A，t1时刻写入了 word1，主节点进行广播，正常统计
+t2时刻写入了word2，但是此时节点3的监测线程还没有读取到，因此会反馈上一轮的统计数据。
+应该怎么让它每次用最新的呢
+
+如果版本更低，说明我的数据还没更新到，要等线程一会儿
+
+
+对于一个线程会操作的变量，主进程会用到这个变量的内容，应该怎么创建更合理
+
+我的逻辑是这个线程更新完之后，主进程再去用。是一个map存储的。
+线程操作： //本地存储关于这个PID的我的选择
+AllNodeCommonMsg.myChoice.put(eventData.getEventId(),msg.isPassOrNot());
+
+主进程操作：//对于这个进程的我的判断
+boolean myChoose = AllNodeCommonMsg.myChoice.get(eventId);
+
+再接下来，我希望主进程用的是最新的，
+我想可以这么做，如果对应的key有内容，说明线程写入了。读取之后再删掉。
+如果是空的就等一会儿线程的更新，有内容了再读取再删掉。
+这样怎么写呢
+
+实现一个函数
+public static Map<String, List<VoteBasicMsg>> allNodeState = new HashMap<>();
+ VoteBasicMsg {
+    /**
+     * 节点的实际编号
+     */
+    private int nodeId;
+    /**
+     * 这个代表了节点的决定
+     */
+    private boolean vote;
+}
+从这个Map中读取，事件event对应的列表中，nodeid= n的那个vote
+
+
+ 
+            while (true) {
+                // 检查是否有内容
+                if (AllNodeCommonMsg.myChoice.containsKey(eventId)) {
+                    // 获取并删除内容
+                    myChoose = AllNodeCommonMsg.myChoice.remove(eventId);
+                    System.out.println("读取到内容a "+ myChoose);
+                    break;  // 退出循环
+                }
+                // 等待一段时间再进行下一次轮询
+                try {
+                    Thread.sleep(100);  // 暂停100毫秒
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+ 
+ 我需要一个线程去跟踪一个map的变化，并把它打印出来
+public static ConcurrentHashMap<String, Boolean> myChoice = new ConcurrentHashMap<>();
+ 这是要跟踪的变量
+ 
+ 
+ 
+
+
+/root/tracee/dist/tracee-ebpf --output json --trace container --output option:detect-syscall --output option:parse-arguments --output option:exec-env --trace event=$(/root/tracee/dist/tracee-rules --rules TRC-25 --list-events) | /root/tracee/dist/tracee-rules --input-tracee format:json --input-tracee file:stdin --rules TRC-25  > /tmp/node1_log.txt 2>&1 &",
+                
+				
+				
+/root/tracee/dist/tracee-ebpf --output json --trace container --output option:detect-syscall --output option:parse-arguments --output option:exec-env --trace event=$(/root/tracee/dist/tracee-rules --rules TRC-25 --list-events) | /root/tracee/dist/tracee-rules --input-tracee format:json --input-tracee file:stdin --rules TRC-25  > /tmp/node1_log.txt 2>&1 & 
+echo $!
+
+ 
+环境是ubuntu18.04,java8。我会运行java代码, 代码会执行一段下面的命令 
+/root/tracee/dist/tracee-ebpf --output json --trace container --output option:detect-syscall --output option:parse-arguments --output option:exec-env --trace event=$(/root/tracee/dist/tracee-rules --rules TRC-25 --list-events) | /root/tracee/dist/tracee-rules --input-tracee format:json --input-tracee file:stdin --rules TRC-25  > /tmp/node1_log.txt 2>&1 &
+我要在代码中获得这个指令对应进程的pid，经过测试"pgrep -f获得不到正确pid
+
+
+ProcessBuilder builder = new ProcessBuilder("/bin/bash", "-c", command);
+Process process = builder.start();
+这样执行的命令，可以用echo $!读取到pid吗
+
+/root/tracee/dist/tracee-ebpf --output json --trace container --output option:detect-syscall --output option:parse-arguments --output option:exec-env --trace event=$(/root/tracee/dist/tracee-rules --rules TRC-25 --list-events) | /root/tracee/dist/tracee-rules --input-tracee format:json --input-tracee file:stdin --rules TRC-25  > /tmp/node1_log.txt 2>&1 &
+echo $!
+ 
+
+
+ 
+环境是ubuntu18.04,java8。 我想执行下面这个指令并且读取输出，如果是多个存储为数组
+pgrep -f "/root/tracee/dist/tracee-rules --input-tracee format:json --input-tracee file:stdin --rules TRC-25"
+
+
+
+下面是一个基本的概述，展示如何使用Spring来实现该系统：
+
+构建节点应用：使用Spring框架创建节点应用程序。可以使用Spring Boot来简化应用程序的配置和部署。
+
+定义节点角色：在节点应用程序中，定义节点的角色，包括主节点（Leader）和普通节点。可以使用Spring的依赖注入（Dependency Injection）功能来管理节点之间的通信和数据交换。
+
+P2P网络通信：使用Spring提供的网络通信库（如Spring Integration或Spring Cloud）来建立节点之间的P2P网络连接，并实现节点之间的消息传递和数据交换。
+
+数据表决逻辑：在每个节点中实现逻辑运算和表决功能，根据输入的用户行为计算结果，并将结果发送给主节点。
+
+主节点逻辑：主节点负责收集所有结果，并根据少数服从多数的原则决定最终结果。可以使用Spring的事件机制或消息队列来实现结果收集和决策过程。
+
+结果广播：主节点将最终结果广播给所有节点，可以使用Spring提供的消息发布和订阅机制来实现结果的广播。
+
+异常处理：设计适当的异常处理机制，以应对可能出现的问题，例如发现恶意节点。当发现恶意节点时，可以使用冗余节点替换它，并更新P2P网络。
+
+总结起来，使用Spring相关技术可以方便地构建分布式节点的表决系统。您可以利用Spring Boot、依赖注入、网络通信库、事件机制和消息发布/订阅等功能来实现节点的角色定义、P2P网络通信、数据表决逻辑、主节点决策和结果广播等关键功能。同时，通过适当的异常处理机制，可以处理可能出现的问题，确保系统的可靠性和健壮性。
+
+
+
+下面是一个更详细的说明，介绍如何使用Spring相关技术来实现分布式节点的表决系统的各个部分：
+
+节点应用程序构建：
+
+使用Spring Boot来创建节点应用程序，简化配置和部署过程。
+节点角色定义和通信：
+
+使用Spring的依赖注入（Dependency Injection）来管理节点之间的通信和数据交换。
+使用Spring Integration或Spring Cloud来建立P2P网络连接和实现节点之间的消息传递。
+数据表决逻辑：
+
+在每个节点中实现逻辑运算和表决功能，根据输入的用户行为计算结果。
+使用Java编程语言和Spring框架提供的功能来实现逻辑运算。
+主节点决策：
+
+使用Spring的事件机制或消息队列来实现结果收集和主节点的决策过程。
+在主节点中，监听节点发送的结果，并根据少数服从多数的原则决定最终结果。
+结果广播：
+
+使用Spring提供的消息发布和订阅机制，将最终结果广播给所有节点。
+主节点发布结果消息，其他节点订阅并接收结果消息。
+异常处理和冗余节点替换：
+
+设计适当的异常处理机制来处理可能出现的问题，例如发现恶意节点。
+使用冗余节点替换恶意节点，并更新P2P网络以确保节点的可靠性和健壮性。
+具体的实现细节会根据系统的要求和设计选择不同的技术和组件。例如，您可以使用Spring Boot来创建节点应用程序，并使用Spring Integration或Spring Cloud来实现节点之间的通信。在节点应用程序中，使用Spring的依赖注入来管理节点之间的通信和数据交换。对于结果收集和决策，可以使用Spring的事件机制或消息队列。同时，可以使用Spring提供的消息发布和订阅机制来实现结果的广播。
+
+根据具体的要求，您可能还需要考虑使用其他技术和组件，如Spring Data用于数据持久化、Spring Security用于安全性等等。总体而言，Spring框架提供了丰富的功能和组件，可以灵活地支持构建分布式系统中的各个部分。根据您的具体需求和技术栈，可以选择适合的Spring技术和组件来实现分布式节点的表决系统。
+
+
+
+
+
+User
+更详细一点
+ChatGPT
+当使用Spring相关技术来实现分布式节点的表决系统时，可以按照以下方式利用不同的组件和功能：
+
+节点应用程序构建：
+
+使用Spring Boot来创建节点应用程序，它提供了自动配置、快速启动和简化的开发体验。
+节点角色定义和通信：
+
+使用Spring的依赖注入（Dependency Injection）功能来管理节点之间的通信和数据交换。可以使用@Autowired注解注入依赖关系。
+使用Spring Integration来实现节点之间的消息传递和通信。可以定义消息通道（Message Channels）和消息处理器（Message Handlers）来处理消息的发送和接收。
+数据表决逻辑：
+
+在每个节点中实现逻辑运算和表决功能，可以使用普通的Java编程语言和Spring框架提供的功能来实现。
+在节点中编写相应的业务逻辑代码，对输入的用户行为进行计算和表决，并返回结果。
+主节点决策：
+
+使用Spring的事件机制来实现结果收集和主节点的决策过程。节点可以发布事件，主节点可以订阅并监听这些事件。
+在主节点中，编写事件监听器（Event Listeners）来收集节点发送的结果，并根据少数服从多数的原则决定最终结果。
+结果广播：
+
+使用Spring的消息发布和订阅机制，将最终结果广播给所有节点。节点可以订阅结果消息以接收最终结果。
+主节点可以使用Spring的消息发布器（Message Publisher）来发布结果消息，节点可以使用消息监听器（Message Listeners）来接收并处理结果消息。
+异常处理和冗余节点替换：
+
+设计适当的异常处理机制来处理可能出现的问题，如发现恶意节点或节点故障。
+可以使用心跳机制来监测节点的健康状况，并在发现异常时使用冗余节点替换故障节点。
+更新P2P网络时，可以使用服务注册和发现技术，如Spring Cloud Netflix的Eureka或Spring Cloud Consul。
+根据具体的要求和场景，您可能还需要考虑使用其他Spring技术和组件，如Spring Data用于数据持久化，Spring Security用于安全性等等。
+
+综上所述，通过利用Spring Boot、依赖注入、Spring Integration、事件机制、消息发布/订阅等功能和组件，可以实现分布式节点的表决系统的各个部分。具体的实现细节和代码会根据系统的需求和架构选择不同的技术和组件。因此，您需要根据您的具体要求和技术栈，选择适合的Spring技术和组件来实现分布式节点的表决系统。
+
+
+
+List<Integer> activeNodeList = AllNodeCommonMsg.activeNodeList;
+List<Integer> backupNodeList = AllNodeCommonMsg.backupNodeList;
+我有这样两个列表，可以帮我打印出来吗，以表格的形式。java。每个元素最好是分开的
+最好是带网格线的格式，要做好对齐。只需要打印部分的逻辑就可以，不用管数据结构
+ 
+ 
+我有两个这样的列表
+[活跃节点列表, 2, null, null, null]
+[备份节点列表, 4]
+他们属于List<String[]> tableData， 怎么打印这个tableData。带网格线那种表格的形式
+
+
+我有一些命令，字符串形式存在数组里，例如
+String[] commands = new String[]{
+                "0",
+                "1",
+                "2",
+                "3",
+        };
+之前版本中，只有四个节点对应四个命令，但是我想要扩展成N个节点对应N个命令；
+想法是这样，基于上述数组初始化一个新的命令数组String[N]。这里面N个字符串是依次读出来的
